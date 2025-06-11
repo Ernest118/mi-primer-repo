@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Juego con cámara y depuración</title>
+  <style>
+    body { margin: 0; background: #111; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
+    canvas, video { margin-top: 10px; }
+    .game {
+      width: 800px; height: 400px;
+      background: #333;
+      position: relative;
+      overflow: hidden;
+      border: 3px solid white;
+      margin-top: 20px;
+    }
+    .player {
+      width: 40px; height: 40px;
+      background: lime;
+      position: absolute;
+      bottom: 0;
+      left: 50px;
+    }
+    .obstacle {
+      width: 40px; height: 40px;
+      background: crimson;
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      animation: moveObstacle 3s linear infinite;
+    }
+    @keyframes moveObstacle {
+      0% { right: -40px; }
+      100% { right: 100%; }
+    }
+    .jump {
+      animation: jump 0.6s ease;
+    }
+    @keyframes jump {
+      0% { bottom: 0; }
+      50% { bottom: 150px; }
+      100% { bottom: 0; }
+    }
+    #startBtn {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    #log {
+      background: #222;
+      color: #0f0;
+      padding: 10px;
+      margin-top: 10px;
+      width: 90%;
+      max-width: 800px;
+      height: 100px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Juego con cámara y depuración 🛠️</h2>
+  <video id="video" width="300" height="200" autoplay playsinline></video>
+  <canvas id="canvas" width="300" height="200"></canvas>
+  <button id="startBtn">Iniciar detección</button>
+  <div class="game">
+    <div class="player" id="player"></div>
+    <div class="obstacle" id="obstacle"></div>
+  </div>
+  <div id="log">Esperando para iniciar...</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+
+  <script>
+    const log = (msg) => {
+      const logEl = document.getElementById("log");
+      logEl.innerHTML += `<div>> ${msg}</div>`;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
+    };
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const player = document.getElementById("player");
+    const obstacle = document.getElementById("obstacle");
+    const startBtn = document.getElementById("startBtn");
+
+    let jumping = false;
+    let model = null;
+
+    function triggerJump() {
+      if (!jumping) {
+        jumping = true;
+        player.classList.add("jump");
+        setTimeout(() => {
+          player.classList.remove("jump");
+          jumping = false;
+        }, 600);
+      }
+    }
+
+    function countExtendedFingers(landmarks) {
+      let count = 0;
+      const tips = [8, 12, 16, 20];
+      for (let tip of tips) {
+        if (landmarks[tip][1] < landmarks[tip - 2][1]) count++;
+      }
+      return count;
+    }
+
+    async function detect() {
+      try {
+        const predictions = await model.estimateHands(video);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (predictions.length > 0) {
+          const landmarks = predictions[0].landmarks;
+          for (let point of landmarks) {
+            ctx.beginPath();
+            ctx.arc(point[0], point[1], 5, 0, 2 * Math.PI);
+            ctx.fillStyle = "aqua";
+            ctx.fill();
+          }
+          const extended = countExtendedFingers(landmarks);
+          if (extended >= 3) {
+            triggerJump();
+          }
+        }
+        requestAnimationFrame(detect);
+      } catch (err) {
+        log("Error en detección: " + err.message);
+      }
+    }
+
+    startBtn.addEventListener("click", async () => {
+      try {
+        log("Cargando modelo...");
+        model = await handpose.load();
+        log("Modelo cargado.");
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        await video.play();
+        log("Cámara activada.");
+        detect();
+      } catch (err) {
+        log("Error al iniciar: " + err.message);
+      }
+    });
+
+    setInterval(() => {
+      const playerTop = parseInt(window.getComputedStyle(player).getPropertyValue("bottom"));
+      const obstacleLeft = parseInt(window.getComputedStyle(obstacle).getPropertyValue("right"));
+      if (obstacleLeft < 800 - 50 && obstacleLeft > 800 - 90 && playerTop < 40) {
+        alert("¡Perdiste!");
+        location.reload();
+      }
+    }, 10);
+  </script>
+</body>
+</html>
