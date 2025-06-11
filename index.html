@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Juego de salto con dedos</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; text-align: center; background: #222; color: #fff; }
+    canvas { background: #444; display: block; margin: auto; }
+    #video { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Salta con los dedos</h1>
+  <p>Muestra un dedo frente a la cámara para que el jugador salte.</p>
+  <video id="video" width="640" height="480" autoplay playsinline></video>
+  <canvas id="game" width="800" height="400"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.15.0/dist/tf-core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.15.0/dist/tf-converter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.15.0/dist/tf-backend-webgl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const gravity = 0.6;
+    let model;
+
+    const player = { x: 50, y: 350, vy: 0, size: 30, jumping: false };
+    const obstacle = { x: 800, y: 350, w: 30, h: 30, speed: 5 };
+
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      return new Promise(resolve => { video.onloadedmetadata = () => resolve(video); });
+    }
+
+    async function loadModel() {
+      model = await handpose.load();
+    }
+
+    function drawPlayer() {
+      ctx.fillStyle = 'lime';
+      ctx.fillRect(player.x, player.y, player.size, player.size);
+    }
+
+    function drawObstacle() {
+      ctx.fillStyle = 'red';
+      ctx.fillRect(obstacle.x, obstacle.y, obstacle.w, obstacle.h);
+    }
+
+    function jump() {
+      if (!player.jumping) {
+        player.vy = -12;
+        player.jumping = true;
+      }
+    }
+
+    function updateGame() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      obstacle.x -= obstacle.speed;
+      if (obstacle.x + obstacle.w < 0) obstacle.x = canvas.width;
+
+      player.vy += gravity;
+      player.y += player.vy;
+      if (player.y >= 350) {
+        player.y = 350;
+        player.vy = 0;
+        player.jumping = false;
+      }
+
+      if (
+        player.x < obstacle.x + obstacle.w &&
+        player.x + player.size > obstacle.x &&
+        player.y < obstacle.y + obstacle.h &&
+        player.y + player.size > obstacle.y
+      ) {
+        ctx.fillStyle = 'yellow';
+        ctx.font = '40px sans-serif';
+        ctx.fillText('Game Over', 300, 200);
+        obstacle.x = canvas.width;
+      }
+
+      drawPlayer();
+      drawObstacle();
+      requestAnimationFrame(updateGame);
+    }
+
+    async function detectFinger() {
+      if (model && video.readyState === 4) {
+        const predictions = await model.estimateHands(video, true);
+        if (predictions.length > 0) {
+          const landmarks = predictions[0].landmarks;
+          const tip = landmarks[8]; // índice
+          const base = landmarks[5];
+          if (tip[1] < base[1] - 20) jump();
+        }
+      }
+      requestAnimationFrame(detectFinger);
+    }
+
+    async function init() {
+      await setupCamera();
+      await loadModel();
+      video.play();
+      updateGame();
+      detectFinger();
+    }
+
+    init();
+  </script>
+</body>
+</html>
